@@ -26,10 +26,15 @@ def resolve_as_of(value: str | None) -> date:
     return date.fromisoformat(value)
 
 
-def compute(ds: Dataset, as_of: date, fx: dict[str, float]) -> dict:
-    items = aging.open_items(ds, as_of)
+def compute(ds: Dataset, as_of: date, fx: dict[str, float], prof: dict | None = None) -> dict:
+    prof = prof or profile.load(None)
+    rules = prof["aging"]
+    buckets = aging.bucket_keys(rules["bucket_boundaries"], rules["basis"])
+    for r in ds.revenue:
+        r.apply_timing_defaults(profile.timing_by_category(prof))
+    items = aging.open_items(ds, as_of, rules)
     credits = aging.unapplied_credits(ds, as_of)
-    pivot = aging.aging_pivot(items, credits)
+    pivot = aging.aging_pivot(items, credits, buckets)
     by_inv = {i.id: i for i in ds.invoices}
     item_by_inv = {it["invoice_id"]: it for it in items}
 
@@ -74,10 +79,11 @@ def compute(ds: Dataset, as_of: date, fx: dict[str, float]) -> dict:
             "source": ds.source,
             "version": (ROOT / "VERSION").read_text().strip() if (ROOT / "VERSION").exists() else "dev",
             "fx_to_usd": fx,
-            "buckets": list(aging.BUCKETS),
+            "buckets": list(buckets),
+            "profile": ui_profile(prof),
         },
         "kpis": {
-            "totals_by_currency": aging.totals_by_currency(pivot),
+            "totals_by_currency": aging.totals_by_currency(pivot, buckets),
             "dso_days": aging.dso(ds, items, as_of, fx),
             "open_invoices": sum(1 for it in items if it["open"] > aging.EPS),
             "overdue_invoices": sum(1 for it in items if it["status"] == "overdue"),
@@ -94,6 +100,22 @@ def compute(ds: Dataset, as_of: date, fx: dict[str, float]) -> dict:
         "usage": usage,
         "actions": to_jsonable(ds.actions),
     }
+
+
+def ui_profile(prof: dict) -> dict:
+    """The parts of the profile the dashboard needs. Data-source details stay out of data.json."""
+    keys = ("company", "entities", "revenue_streams", "payment_terms", "aging", "collections", "modules", "targets")
+    return {k: prof[k] for k in keys}
+
+
+def check_fx(prof: dict, fx: dict[str, float]) -> list[str]:
+    errs = []
+    if prof["company"]["reporting_currency"] != "USD":
+        errs.append("company.reporting_currency: only USD is supported for now")
+    for cur in prof["currencies"]:
+        if cur != "USD" and cur not in fx:
+            errs.append(f"config.json fx_to_usd: no rate for {cur}")
+    return errs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -114,15 +136,21 @@ def main(argv: list[str] | None = None) -> int:
         print(e, file=sys.stderr)
         return 1
     as_of = resolve_as_of(args.as_of or cfg.get("as_of"))
+    fx = cfg.get("fx_to_usd", {})
+    errors = check_fx(prof, fx)
+    if errors:
+        print("configuration error:\n  " + "\n  ".join(errors), file=sys.stderr)
+        return 1
     name = cfg.get("connector", "sample")
-    ds = get(name)(cfg.get("options", {}).get(name, {}), as_of)
+    options = {**cfg.get("options", {}).get(name, {}), "terms": prof["payment_terms"]}
+    ds = get(name)(options, as_of)
 
-    errors = ds.validate()
+    errors = ds.validate(currencies=prof["currencies"])
     if errors:
         print("validation failed:\n  " + "\n  ".join(errors[:50]), file=sys.stderr)
         return 1
 
-    data = compute(ds, as_of, cfg.get("fx_to_usd", {}))
+    data = compute(ds, as_of, fx, prof)
     out = Path(args.out)
     if (ROOT / "web").exists():
         shutil.copytree(ROOT / "web", out, dirs_exist_ok=True)

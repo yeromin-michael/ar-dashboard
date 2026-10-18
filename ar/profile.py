@@ -7,9 +7,11 @@ which reproduce the dashboard's built-in behavior.
 """
 from __future__ import annotations
 
+import calendar
 import copy
 import json
 import re
+from datetime import date, timedelta
 from pathlib import Path
 
 PROFILE_VERSION = 1
@@ -18,7 +20,7 @@ BILLING_MODELS = ("upfront", "monthly", "quarterly", "annual", "usage", "milesto
 AGING_BASES = ("due_date", "invoice_date")
 TERMS_BASES = ("net", "eom")       # eom = days counted from the end of the invoice month
 MODULES = ("revenue_recognition", "dunning", "whats_next", "usage_billing", "serials")
-MAX_BUCKET_BOUNDARIES = 6
+MAX_BUCKET_BOUNDARIES = 5    # + "current" = 7 buckets, one per color in the --b0..--b6 ramp
 
 DEFAULTS: dict = {
     "profile_version": PROFILE_VERSION,
@@ -42,6 +44,17 @@ DEFAULTS: dict = {
 
 _KEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _CUR = re.compile(r"^[A-Z]{3}$")
+
+
+def due_date(issue: date, days: int, basis: str = "net") -> date:
+    """Due date from payment terms: net = issue + days; eom = end of the issue month + days."""
+    if basis == "eom":
+        issue = issue.replace(day=calendar.monthrange(issue.year, issue.month)[1])
+    return issue + timedelta(days=days)
+
+
+def timing_by_category(p: dict) -> dict[str, str]:
+    return {s["key"]: s["revenue_type"] for s in p["revenue_streams"]}
 
 
 class ProfileError(ValueError):

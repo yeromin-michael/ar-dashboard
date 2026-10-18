@@ -2,8 +2,8 @@ from datetime import date
 
 import pytest
 
-from ar.aging import (aging_pivot, bucket, dso, dunning, open_items,
-                      totals_by_currency, unapplied_credits)
+from ar.aging import (BUCKETS, aging_pivot, bucket, bucket_keys, dso, dunning,
+                      open_items, totals_by_currency, unapplied_credits)
 from ar.model import Customer, Dataset, Invoice, Payment
 
 AS_OF = date(2026, 6, 30)
@@ -107,3 +107,49 @@ def test_validate_catches_bad_refs():
     assert any("currency differs" in e for e in errs)
     assert any("unknown customer ghost" in e for e in errs)
     assert ds_basic().validate() == []
+
+
+def test_bucket_keys():
+    assert bucket_keys() == BUCKETS == ("current", "1-30", "31-60", "61-90", "90+")
+    assert bucket_keys([15, 45]) == ("current", "1-15", "16-45", "45+")
+    assert bucket_keys([30, 60, 90], "invoice_date") == ("0-30", "31-60", "61-90", "90+")
+    assert bucket_keys([7]) == ("current", "1-7", "7+")
+
+
+@pytest.mark.parametrize("days,bounds,basis,expected", [
+    (0, [15, 45], "due_date", "current"), (15, [15, 45], "due_date", "1-15"), (16, [15, 45], "due_date", "16-45"),
+    (46, [15, 45], "due_date", "45+"), (0, [30, 60], "invoice_date", "0-30"), (31, [30, 60], "invoice_date", "31-60"),
+    (61, [30, 60], "invoice_date", "60+"),
+])
+def test_bucket_with_rules(days, bounds, basis, expected):
+    assert bucket(days, bounds, basis) == expected
+
+
+def test_grace_days_delay_overdue_but_not_days_count():
+    ds = ds_basic()
+    rows = {r["invoice_id"]: r for r in open_items(ds, AS_OF, {"grace_days": 25})}
+    assert rows["A2"]["days_overdue"] == 20                 # real lateness is still reported
+    assert rows["A2"]["status"] == "partial" and rows["A2"]["bucket"] == "current"
+    assert rows["A3"]["status"] == "overdue" and rows["A3"]["bucket"] == "90+"   # 121 - 25 = 96
+    items = open_items(ds, AS_OF, {"grace_days": 25})
+    assert [r["invoice_id"] for g in dunning(ds, items) for r in g["invoices"]] == ["A3", "B1"]
+
+
+def test_invoice_date_basis_ages_from_issue():
+    ds = ds_basic()
+    rules = {"basis": "invoice_date", "bucket_boundaries": [30, 60, 90]}
+    items = open_items(ds, AS_OF, rules)
+    rows = {r["invoice_id"]: r for r in items}
+    assert rows["A1"]["bucket"] == "90+"             # issued 2025-12-01, 211 days old, but not yet due
+    assert rows["A1"]["status"] == "open"
+    pivot = aging_pivot(items, unapplied_credits(ds, AS_OF), bucket_keys([30, 60, 90], "invoice_date"))
+    usd = next(g for g in pivot if g["customer_id"] == "c1")
+    assert usd["90+"] == 5500.0 and usd["past_due"] == 4500.0   # past due still means overdue by due date
+    assert totals_by_currency(pivot, bucket_keys([30, 60, 90], "invoice_date"))["USD"]["0-30"] == 0.0
+
+
+def test_grace_does_not_shift_bucket_edges():
+    ds = Dataset(customers=[Customer("c1", "Acme", "Inc", "USD")],
+                 invoices=[inv("L", date(2026, 5, 30), 100.0)])          # 31 days late
+    row = open_items(ds, AS_OF, {"grace_days": 3})[0]
+    assert row["status"] == "overdue" and row["days_overdue"] == 31 and row["bucket"] == "31-60"

@@ -4,10 +4,19 @@
 let D = null;              // data.json
 let CUST = {};             // id -> customer
 const F = {};              // per-page filter state, survives re-render
-const BUCKET_LABEL = { 'current': 'Current', '1-30': '1–30', '31-60': '31–60', '61-90': '61–90', '90+': '90+' };
-const BUCKET_VAR = { 'current': '--b0', '1-30': '--b1', '31-60': '--b2', '61-90': '--b3', '90+': '--b4' };
-const CAT_ORDER = ['subscription', 'data', 'hardware', 'adjustment'];
-const CAT_VAR = { subscription: '--c1', data: '--c2', hardware: '--c3', adjustment: '--c4' };
+// Aging buckets, categories, modules and targets come from the company profile (data.json meta.profile).
+const PROF = () => D.meta.profile;
+const bucketLabel = b => b === 'current' ? 'Current' : b.replace('-', '–');
+// Ordinal ramp --b0..--b6: up to 5 buckets keep today's steps, more spread over the full ramp.
+function bucketColor(b) {
+  const n = D.meta.buckets.length, i = D.meta.buckets.indexOf(b), top = n <= 5 ? 4 : 6;
+  return cssVar('--b' + (n > 1 ? Math.round(i * top / (n - 1)) : 0));
+}
+const CAT_SLOTS = 6;   // categorical colors --c1..--c6; further categories share "Other"
+const CAT_ORDER = () => PROF().revenue_streams.map(s => s.key);
+const catLabel = k => (PROF().revenue_streams.find(s => s.key === k) || {}).label || cap(k);
+const catColor = k => { const i = CAT_ORDER().indexOf(k); return cssVar(i >= 0 && i < CAT_SLOTS ? '--c' + (i + 1) : '--muted'); };
+const moduleOn = m => PROF().modules[m] !== false;
 // Revenue type = recognition timing (ASC 606 / IFRS 15). Two series -> categorical slots 1 and 2.
 const TIMING_ORDER = ['over_time', 'point_in_time'];
 const TIMING_LABEL = { over_time: 'Over time', point_in_time: 'Point in time' };
@@ -237,17 +246,17 @@ function agingBars(box, W, rows) {
       else if (last) d = rightRounded(x, y0, ww, 20, 4);
       else if (first) d = `M${x + ww},${y0}H${x + 4}Q${x},${y0} ${x},${y0 + 4}V${y0 + 16}Q${x},${y0 + 20} ${x + 4},${y0 + 20}H${x + ww}Z`;
       else d = `M${x},${y0}H${x + ww}V${y0 + 20}H${x}Z`;
-      const seg = s('path', { class: 'mark', d, fill: cssVar(BUCKET_VAR[b]) });
-      hover(seg, e => showTip(e, [{ value: money(v, r.cur, 0), label: `${BUCKET_LABEL[b]} · ${(v / total * 100).toFixed(0)}% of ${r.label}` }]));
+      const seg = s('path', { class: 'mark', d, fill: bucketColor(b) });
+      hover(seg, e => showTip(e, [{ value: money(v, r.cur, 0), label: `${bucketLabel(b)} · ${(v / total * 100).toFixed(0)}% of ${r.label}` }]));
       svgEl.append(seg);
       const pct = v / total * 100;
-      if (ww > 40) svgEl.append(s('text', { x: x + ww / 2, y: y0 + 14, 'text-anchor': 'middle', style: `fill:${inkOn(cssVar(BUCKET_VAR[b]))};pointer-events:none` }, pct.toFixed(0) + '%'));
+      if (ww > 40) svgEl.append(s('text', { x: x + ww / 2, y: y0 + 14, 'text-anchor': 'middle', style: `fill:${inkOn(bucketColor(b))};pointer-events:none` }, pct.toFixed(0) + '%'));
       x += w;
     });
     svgEl.append(s('text', { x: W, y: y0 + 15, 'text-anchor': 'end', style: 'fill:var(--text);font-weight:600' }, compact(total, r.cur)));
   });
   box.append(svgEl);
-  box.append(legend(D.meta.buckets.map(b => ({ label: BUCKET_LABEL[b], color: cssVar(BUCKET_VAR[b]) }))));
+  box.append(legend(D.meta.buckets.map(b => ({ label: bucketLabel(b), color: bucketColor(b) }))));
 }
 
 // A card holding a chart with a table-view twin.
@@ -287,12 +296,20 @@ const PAGES = {
   invoices: { title: 'Invoice Summary', sub: 'Invoices by month', nav: 'Invoices', hint: 'By month', render: pageInvoices },
   ar: { title: 'Receivables', sub: 'Open & overdue, by aging bucket', nav: 'Receivables', hint: 'Aging', render: pageAR },
   collection: { title: 'Collection', sub: 'Cash received', nav: 'Collection', hint: 'Cash in', render: pageCollection },
-  revrec: { title: 'Revenue Recognition', sub: 'Recognized revenue by customer and month', nav: 'Revenue Rec', hint: 'By customer', render: pageRevRec },
-  dunning: { title: 'Dunning', sub: 'Overdue accounts and reminder drafts', nav: 'Dunning', hint: 'Reminders', render: pageDunning },
-  next: { title: "What's Next", sub: 'Actions and account digest', nav: "What's Next", hint: 'Actions', render: pageNext },
+  revrec: { title: 'Revenue Recognition', sub: 'Recognized revenue by customer and month', nav: 'Revenue Rec', hint: 'By customer', render: pageRevRec, module: 'revenue_recognition' },
+  dunning: { title: 'Dunning', sub: 'Overdue accounts and reminder drafts', nav: 'Dunning', hint: 'Reminders', render: pageDunning, module: 'dunning' },
+  next: { title: "What's Next", sub: 'Actions and account digest', nav: "What's Next", hint: 'Actions', render: pageNext, module: 'whats_next' },
 };
+const pageOn = p => !p.module || moduleOn(p.module);
+
+// " · target ≤ 45 days (met)" when the profile sets a target; lower is better for both targets.
+function targetNote(value, target, unit) {
+  if (target == null) return '';
+  return ` · target ≤ ${target}${unit} (${value <= target ? 'met' : 'missed'})`;
+}
 
 function pageOverview() {
+  const tg = PROF().targets;
   const tot = D.kpis.totals_by_currency;
   const gross = sum(Object.entries(tot), ([c, t]) => usd(t.gross, c));
   const past = sum(Object.entries(tot), ([c, t]) => usd(t.past_due, c));
@@ -322,14 +339,15 @@ function pageOverview() {
   return [
     h('div', { class: 'tiles' },
       tile('Total AR', compact(gross), 'USD equivalent, all currencies'),
-      tile('Past due', compact(past), gross ? `${(past / gross * 100).toFixed(0)}% of AR` : ''),
-      tile('DSO', D.kpis.dso_days == null ? '—' : D.kpis.dso_days.toFixed(0) + ' days', '90-day window'),
+      tile('Past due', compact(past), gross ? `${(past / gross * 100).toFixed(0)}% of AR` + targetNote(past / gross * 100, tg.past_due_pct, '%') : ''),
+      tile('DSO', D.kpis.dso_days == null ? '—' : D.kpis.dso_days.toFixed(0) + ' days',
+        '90-day window' + (D.kpis.dso_days == null ? '' : targetNote(D.kpis.dso_days, tg.dso_days, ' days'))),
       tile('Overdue invoices', String(D.kpis.overdue_invoices), `of ${D.kpis.open_invoices} open`),
       tile('Unapplied credits', compact(credits), 'Payments & credits on account')),
     h('div', { class: 'grid2' },
       chartCard('Aging by currency', 'Share of open AR in each bucket, native currency',
         (box, W) => agingBars(box, W, Object.entries(tot).map(([c, t]) => ({ label: c, cur: c, b: t }))),
-        () => table([{ label: 'Currency', get: r => r[0] }, ...D.meta.buckets.map(b => ({ label: BUCKET_LABEL[b], num: true, get: r => money(r[1][b], r[0], 0) })),
+        () => table([{ label: 'Currency', get: r => r[0] }, ...D.meta.buckets.map(b => ({ label: bucketLabel(b), num: true, get: r => money(r[1][b], r[0], 0) })),
           { label: 'Total', num: true, get: r => money(r[1].gross, r[0], 0) }], Object.entries(tot))),
       chartCard('Top past-due customers', 'USD equivalent · click a bar to open the customer',
         (box, W) => top.length ? hbars(box, W, top, usdFmt, cssVar('--c1'), it => go('c/' + it.id)) : box.append(h('div', { class: 'empty' }, 'Nothing past due.')),
@@ -358,9 +376,9 @@ function pageInvoices() {
       .sort((a, b) => b.issue_date.localeCompare(a.issue_date) || a.id.localeCompare(b.id));
     const curs = uniq(rows.map(r => r.currency)).sort();
     const strip = table([{ label: 'Open by bucket', get: c => c },
-      ...D.meta.buckets.map(b => ({ label: BUCKET_LABEL[b], num: true, get: c => money(sum(rows.filter(r => r.currency === c && r.bucket === b), r => r.open), c, 0) })),
+      ...D.meta.buckets.map(b => ({ label: bucketLabel(b), num: true, get: c => money(sum(rows.filter(r => r.currency === c && r.bucket === b), r => r.open), c, 0) })),
       { label: 'Total open', num: true, get: c => money(sum(rows.filter(r => r.currency === c), r => r.open), c, 0) },
-      { label: 'Past due', num: true, get: c => money(sum(rows.filter(r => r.currency === c && r.bucket && r.bucket !== 'current'), r => r.open), c, 0) }], curs);
+      { label: 'Past due', num: true, get: c => money(sum(rows.filter(r => r.currency === c && r.status === 'overdue'), r => r.open), c, 0) }], curs);
     put(out, 
       h('section', { class: 'card' }, strip),
       h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, `${rows.length} invoices`)), table([
@@ -399,18 +417,19 @@ function pageAR() {
       const k = i.customer_id + '|' + i.currency;
       const g = groups[k] || (groups[k] = { customer_id: i.customer_id, currency: i.currency, credits: 0, ...Object.fromEntries(D.meta.buckets.map(b => [b, 0])) });
       g[i.bucket] += i.open;
+      if (i.status === 'overdue') g.past_due = (g.past_due || 0) + i.open;
     }
     for (const c of credits) {
       const k = c.customer_id + '|' + c.currency;
       if (groups[k]) groups[k].credits += c.amount;
     }
-    const rows = Object.values(groups).map(g => ({ ...g, gross: sum(D.meta.buckets, b => g[b]), past_due: sum(D.meta.buckets.slice(1), b => g[b]) }))
+    const rows = Object.values(groups).map(g => ({ ...g, gross: sum(D.meta.buckets, b => g[b]), past_due: g.past_due || 0 }))
       .sort((a, b) => a.currency.localeCompare(b.currency) || b.gross - a.gross);
     const curs = uniq(rows.map(r => r.currency)).sort();
     const cols = [
       { label: 'Customer', get: g => h('a', { href: '#/c/' + g.customer_id }, custName(g.customer_id)) },
       { label: 'Cur', get: g => g.currency, muted: true },
-      ...D.meta.buckets.map(b => ({ label: BUCKET_LABEL[b], num: true, get: g => g[b] ? money(g[b], g.currency, 0) : '—' })),
+      ...D.meta.buckets.map(b => ({ label: bucketLabel(b), num: true, get: g => g[b] ? money(g[b], g.currency, 0) : '—' })),
       { label: 'Total', num: true, get: g => money(g.gross, g.currency, 0) },
       { label: 'Past due', num: true, get: g => g.past_due ? money(g.past_due, g.currency, 0) : '—' },
       { label: 'Credits', num: true, get: g => g.credits ? money(-g.credits, g.currency, 0) : '—' },
@@ -434,7 +453,7 @@ function pageAR() {
         { label: 'Customer', get: i => custName(i.customer_id) },
         { label: 'Due', get: i => fmtDate(i.due_date) },
         { label: 'Days overdue', num: true, get: i => i.days_overdue || '—' },
-        { label: 'Bucket', get: i => BUCKET_LABEL[i.bucket] },
+        { label: 'Bucket', get: i => bucketLabel(i.bucket) },
         { label: 'Total', num: true, get: i => money(i.total, i.currency) },
         { label: 'Paid', num: true, get: i => i.paid ? money(i.paid, i.currency) : '—' },
         { label: 'Open', num: true, get: i => money(i.open, i.currency) },
@@ -446,7 +465,7 @@ function pageAR() {
     search('ar-q', 'Search customer or invoice…', paint),
     select('ar-cust', [['', 'All customers'], ...custOpts.map(id => [id, custName(id)])], paint, 'Customer'),
     select('ar-cur', [['', 'All currencies'], ...uniq(D.invoices.map(i => i.currency)).sort().map(c => [c, c])], paint, 'Currency'),
-    select('ar-bucket', [['', 'All buckets'], ...D.meta.buckets.map(b => [b, BUCKET_LABEL[b] + (b === 'current' ? '' : ' days')])], paint, 'Bucket'),
+    select('ar-bucket', [['', 'All buckets'], ...D.meta.buckets.map(b => [b, bucketLabel(b) + (b === 'current' ? '' : ' days')])], paint, 'Bucket'),
     h('button', { class: 'btn', onclick: () => { ['ar-q', 'ar-cust', 'ar-cur', 'ar-bucket'].forEach(k => delete F[k]); render(); } }, 'Clear'),
     h('button', { class: 'btn primary right', onclick: () => window.print() }, 'Export PDF')), out];
 }
@@ -472,7 +491,7 @@ function pageCollection() {
         { label: 'Payment date', get: c => fmtDate(c.date) },
         { label: 'Invoice date', get: c => fmtDate(c.invoice_date) },
         { label: 'Customer', get: c => h('a', { href: '#/c/' + c.customer_id }, custName(c.customer_id)) },
-        { label: 'Product', get: c => cap(c.category) },
+        { label: 'Product', get: c => c.category === 'unapplied' ? 'Unapplied' : catLabel(c.category) },
         { label: 'Total collected', num: true, get: c => money(c.amount, c.currency) },
         { label: 'Sales tax', num: true, get: c => money(c.tax, c.currency) },
         { label: 'Net collection', num: true, get: c => money(c.net, c.currency) },
@@ -490,11 +509,22 @@ function pageCollection() {
   paint();
   return [h('div', { class: 'filters' },
     select('col-ent', [['', 'All entities'], ...uniq(D.collections.map(c => c.entity)).sort().map(e => [e, e])], paint, 'Entity'),
-    select('col-cat', [['', 'All products'], ...uniq(D.collections.map(c => c.category)).sort().map(c => [c, cap(c)])], paint, 'Product'),
+    select('col-cat', [['', 'All products'], ...uniq(D.collections.map(c => c.category)).sort().map(c => [c, c === 'unapplied' ? 'Unapplied' : catLabel(c)])], paint, 'Product'),
     select('col-from', [['', 'From: first month'], ...months.map(m => [m, 'From ' + ymLabel(m)])], paint, 'From month'),
     select('col-to', [['', 'To: last month'], ...months.map(m => [m, 'To ' + ymLabel(m)])], paint, 'To month'),
     search('col-q', 'Search customer, invoice, reference…', paint),
     h('button', { class: 'btn primary right', onclick: exportCSV }, 'Export CSV')), out];
+}
+
+// Chart series per category, in profile order. Beyond the color slots, and for
+// categories the profile doesn't list, lines are grouped as "Other".
+function catGroups(rows) {
+  const named = CAT_ORDER().slice(0, CAT_SLOTS);
+  const groups = named.filter(c => rows.some(r => r.category === c))
+    .map(c => ({ key: c, label: catLabel(c), color: catColor(c), test: r => r.category === c }));
+  if (rows.some(r => !named.includes(r.category)))
+    groups.push({ key: 'other', label: 'Other', color: cssVar('--muted'), test: r => !named.includes(r.category) });
+  return groups;
 }
 
 function pageRevRec() {
@@ -507,7 +537,7 @@ function pageRevRec() {
     const byType = F['rr-group'] === 'type';
     const groups = byType
       ? TIMING_ORDER.filter(t => rows.some(r => r.timing === t)).map(t => ({ key: t, label: TIMING_LABEL[t], color: cssVar(TIMING_VAR[t]), test: r => r.timing === t }))
-      : CAT_ORDER.filter(c => rows.some(r => r.category === c)).map(c => ({ key: c, label: cap(c), color: cssVar(CAT_VAR[c]), test: r => r.category === c }));
+      : catGroups(rows);
     const byCust = {};
     for (const r of rows) {
       const k = r.customer_id;
@@ -543,7 +573,7 @@ function pageRevRec() {
   paint();
   return [h('div', { class: 'filters' },
     select('rr-month', [['', 'All months'], ...months.map(m => [m, ymLabel(m)])], paint, 'Month'),
-    select('rr-cat', [['', 'All categories'], ...CAT_ORDER.map(c => [c, cap(c)])], paint, 'Category'),
+    select('rr-cat', [['', 'All categories'], ...uniq([...CAT_ORDER(), ...D.revenue.map(r => r.category)]).map(c => [c, catLabel(c)])], paint, 'Category'),
     select('rr-type', [['', 'All revenue types'], ...TIMING_ORDER.map(t => [t, TIMING_LABEL[t]])], paint, 'Revenue type'),
     search('rr-q', 'Search customer…', paint),
     h('button', { class: 'btn', onclick: () => { ['rr-month', 'rr-cat', 'rr-type', 'rr-group', 'rr-q'].forEach(k => delete F[k]); render(); } }, 'Clear')), out];
@@ -563,7 +593,7 @@ function reminderText(g) {
     pad('Invoice No.', w1) + '  ' + pad('Due Date', w2) + 'Amount', rule, ...lines, rule,
     pad('TOTAL', w1 + w2 + 2) + money(g.total, g.currency), '',
     'If payment has already been sent, please reply with the remittance details so we can apply it.', '',
-    'Thank you,', 'Accounts Receivable',
+    'Thank you,', PROF().collections.sender_name,
   ].join('\n');
   return { to: (c.contact_emails || []).join(','), subject: `Past-due invoices - ${c.name || g.customer_id}`, body };
 }
@@ -592,7 +622,8 @@ function openReminder(g) {
 function pageDunning() {
   const out = h('div');
   const paint = () => {
-    const min = Number(F['dun-min'] || 1);
+    const col = PROF().collections;
+    const min = Number(F['dun-min'] || col.reminder_thresholds_days[0]);
     const groups = D.dunning.map(g => {
       const inv = g.invoices.filter(r => r.days_overdue >= min);
       return { ...g, invoices: inv, total: sum(inv, r => r.open), max_days: Math.max(0, ...inv.map(r => r.days_overdue)) };
@@ -601,7 +632,8 @@ function pageDunning() {
       { label: 'Customer', get: g => h('a', { href: '#/c/' + g.customer_id, onclick: e => e.stopPropagation() }, custName(g.customer_id)) },
       { label: 'Contact', get: g => (CUST[g.customer_id] || {}).contact_name || '', muted: true },
       { label: 'Invoices', num: true, get: g => g.invoices.length },
-      { label: 'Max days overdue', num: true, get: g => g.max_days },
+      { label: 'Max days overdue', num: true, get: g => g.max_days >= col.escalate_after_days
+        ? h('span', { class: 'urg high', title: `Escalate: over ${col.escalate_after_days} days` }, g.max_days + ' · escalate') : g.max_days },
       { label: 'Total outstanding', num: true, get: g => money(g.total, g.currency) },
       { label: 'Action', get: g => h('button', { class: 'btn primary', onclick: e => { e.stopPropagation(); openReminder(g); } }, 'Draft reminder') },
     ], groups, { empty: 'No accounts overdue at this threshold.' })));
@@ -609,7 +641,7 @@ function pageDunning() {
   paint();
   return [h('div', { class: 'filters' },
     h('span', { class: 'note' }, 'Min days overdue:'),
-    select('dun-min', [['1', '1+ days'], ['30', '30+ days'], ['60', '60+ days'], ['90', '90+ days']], paint, 'Minimum days overdue')), out];
+    select('dun-min', PROF().collections.reminder_thresholds_days.map(d => [String(d), d + '+ days']), paint, 'Minimum days overdue')), out];
 }
 
 function pageNext() {
@@ -668,18 +700,18 @@ function pageCustomer(cid) {
         h('dt', {}, 'Budget code'), h('dd', {}, c.budget_code), h('dt', {}, 'Entity'), h('dd', {}, c.entity))),
       bal.length ? chartCard('Aging', 'Open balance by bucket',
         (box, W) => agingBars(box, W, bal.map(g => ({ label: g.currency, cur: g.currency, b: g }))),
-        () => table([{ label: 'Bucket', get: b => BUCKET_LABEL[b] }, ...bal.map(g => ({ label: g.currency, num: true, get: b => money(g[b], g.currency, 0) }))], D.meta.buckets))
+        () => table([{ label: 'Bucket', get: b => bucketLabel(b) }, ...bal.map(g => ({ label: g.currency, num: true, get: b => money(g[b], g.currency, 0) }))], D.meta.buckets))
         : h('section', { class: 'card' }, h('h2', {}, 'Aging'), h('div', { class: 'empty' }, 'Nothing open.'))),
     h('section', { class: 'card' }, h('h2', {}, 'Contract'), h('div', { class: 'desc' }, 'Key commercial terms'),
       table([{ label: 'Record type', get: t => t.record_type }, { label: 'Description', get: t => t.description }, { label: 'Key fields', get: t => t.key_fields }],
         D.contracts.filter(t => t.customer_id === cid))),
   ];
-  if (c.modules.includes('usage_billing')) blocks.push(usageModule(cid));
-  if (c.modules.includes('serials')) blocks.push(serialsModule(cid));
+  if (moduleOn('usage_billing') && c.modules.includes('usage_billing')) blocks.push(usageModule(cid));
+  if (moduleOn('serials') && c.modules.includes('serials')) blocks.push(serialsModule(cid));
   blocks.push(
     h('section', { class: 'card' }, h('h2', {}, 'Billing by quarter'), table([
       { label: 'Quarter', get: g => g.q }, { label: 'Covers', get: g => [...g.months].map(ymShort).join(', ') },
-      { label: 'Categories', get: g => [...g.cats].map(cap).join(', '), muted: true },
+      { label: 'Categories', get: g => [...g.cats].map(catLabel).join(', '), muted: true },
       { label: 'Invoices', num: true, get: g => g.n }, { label: 'Billed', num: true, get: g => money(g.total, c.currency, 0) },
     ], Object.values(quarters).reverse())),
     h('section', { class: 'card' }, h('h2', {}, `Invoices (${invs.length})`), table([
@@ -766,7 +798,7 @@ function currentRoute() { return (location.hash.replace(/^#\/?/, '') || 'overvie
 
 function renderNav() {
   const route = currentRoute();
-  put(document.getElementById('nav'), Object.entries(PAGES).map(([k, p]) =>
+  put(document.getElementById('nav'), Object.entries(PAGES).filter(([, p]) => pageOn(p)).map(([k, p]) =>
     h('a', { href: '#/' + k, class: route === k ? 'active' : null }, p.nav, h('small', {}, p.hint))));
   const q = (document.getElementById('cust-search').value || '').toLowerCase();
   const pd = pastDueByCustomer();
@@ -787,7 +819,7 @@ function render() {
     title = c ? c.name : 'Customer'; sub = c ? `${c.entity} · ${c.product} · ${c.currency}` : '';
     blocks = pageCustomer(route.slice(2));
   } else {
-    const p = PAGES[route] || PAGES.overview;
+    const p = PAGES[route] && pageOn(PAGES[route]) ? PAGES[route] : PAGES.overview;
     title = p.title; sub = p.sub; blocks = p.render();
   }
   document.getElementById('page-title').textContent = title;
@@ -822,7 +854,8 @@ async function boot() {
     return;
   }
   CUST = Object.fromEntries(D.customers.map(c => [c.id, c]));
-  document.getElementById('source-label').textContent = 'Source: ' + D.meta.source;
+  const company = PROF().company.name;
+  document.getElementById('source-label').textContent = (company ? company + ' · ' : '') + 'Source: ' + D.meta.source;
   document.getElementById('asof-pill').textContent = 'As of ' + fmtDate(D.meta.as_of);
   document.getElementById('version').textContent = `v${D.meta.version} · built ${D.meta.generated_at.slice(0, 10)}`;
   document.getElementById('cust-search').addEventListener('input', renderNav);
