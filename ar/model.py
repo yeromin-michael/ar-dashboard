@@ -150,6 +150,8 @@ class Dataset:
                 errs.append(f"payment {p.id}: unknown customer {p.customer_id}")
             if p.kind not in PAYMENT_KINDS:
                 errs.append(f"payment {p.id}: unknown kind {p.kind}")
+            if p.amount <= 0:
+                errs.append(f"payment {p.id}: amount must be positive (set \"negate\" in the mapping if the export shows receipts as negatives)")
             if p.invoice_id is not None:
                 inv = invs.get(p.invoice_id)
                 if inv is None:

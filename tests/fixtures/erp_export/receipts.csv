@@ -1,0 +1,4 @@
+Receipt No,Applied To,Customer Code,Receipt Date,Currency,Amount,Type,Reference
+R-1,INV-1,,10/04/2026,,"1,000.00",Payment,WIRE-1
+R-2,INV-3,,20/05/2026,,"1.000,00",Payment,WIRE-2
+R-3,,C001,25/06/2026,USD,300,Credit,Credit note

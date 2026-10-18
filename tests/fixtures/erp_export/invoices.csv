@@ -1,0 +1,4 @@
+Invoice No,Customer Code,Company,Invoice Date,Due Date,Currency,Net Amount,VAT,Product Type,Billing Type,Details
+INV-1,C001,Inc,01/03/2026,31/03/2026,USD,"$1,000.00",0,Subscription,New,March subscription
+INV-2,C001,Inc,01/05/2026,31/05/2026,$,"2,500.50",0,Hardware,New,Devices
+INV-3,C002,Ltd,15/04/2026,,EUR,"4.000,00",680,Data,Deferred,Annual data

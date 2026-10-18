@@ -1,0 +1,32 @@
+{
+  "_comment": "Column names on the right are the headers in your export. Fields you don't have can be omitted. Only files.invoices is required.",
+  "date_formats": ["%d/%m/%Y", "%Y-%m-%d", "%d/%m/%y"],
+  "files": {
+    "customers": {
+      "path": "customers.csv",
+      "columns": {
+        "id": "Customer Code", "name": "Customer Name", "entity": "Company",
+        "currency": "Currency", "product": "Product", "contact_name": "Contact",
+        "contact_emails": "Emails", "budget_code": "Budget Code", "terms_days": "Terms (days)"
+      }
+    },
+    "invoices": {
+      "path": "invoices.csv",
+      "columns": {
+        "id": "Invoice No", "customer_id": "Customer Code", "entity": "Company",
+        "issue_date": "Invoice Date", "due_date": "Due Date", "currency": "Currency",
+        "net": "Net Amount", "tax": "VAT", "category": "Product Type",
+        "kind": "Billing Type", "description": "Details"
+      },
+      "defaults": { "kind": "new" }
+    },
+    "payments": {
+      "path": "receipts.csv",
+      "columns": {
+        "id": "Receipt No", "invoice_id": "Applied To", "customer_id": "Customer Code",
+        "date": "Receipt Date", "currency": "Currency", "amount": "Amount",
+        "kind": "Type", "reference": "Reference"
+      }
+    }
+  }
+}

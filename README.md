@@ -23,9 +23,18 @@ python3 -m http.server -d dist 8000
 
 ## Using real data
 
-1. Put exports in `data/private/` (gitignored).
-2. Point `config.json` at the `file` connector and a column mapping.
-3. `python3 build.py`
+1. Put CSV/XLSX exports in `data/private/` (gitignored; `*.xlsx` is ignored repo-wide too).
+2. Copy `mappings/example.json` and set the header names from your exports. Only `invoices` is required: customers are derived from invoice rows if there is no customers file, and revenue is derived from invoices if there is no revenue file.
+3. In `config.json` set `"connector": "file"` and point `options.file.mapping` at your mapping.
+4. `python3 build.py` validates everything first. Errors name the file, row and field.
+
+Sign conventions: payments must be positive. If your export shows receipts as negatives or in parentheses, add `"negate": true` to the payments mapping.
+
+| Connector | Status |
+|---|---|
+| `sample` | Fictional, deterministic demo data |
+| `file` | CSV / XLSX + column mapping |
+| `stripe` | Stub: interface defined, not implemented |
 
 ## Data hygiene
 
