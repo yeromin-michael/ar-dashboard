@@ -298,7 +298,7 @@ const PAGES = {
   collection: { title: 'Collection', sub: 'Cash received', nav: 'Collection', hint: 'Cash in', render: pageCollection },
   revrec: { title: 'Revenue Recognition', sub: 'Recognized revenue by customer and month', nav: 'Revenue Rec', hint: 'By customer', render: pageRevRec, module: 'revenue_recognition' },
   dunning: { title: 'Dunning', sub: 'Overdue accounts and reminder drafts', nav: 'Dunning', hint: 'Reminders', render: pageDunning, module: 'dunning' },
-  next: { title: "What's Next", sub: 'Actions and account digest', nav: "What's Next", hint: 'Actions', render: pageNext, module: 'whats_next' },
+  next: { title: 'Up Next', sub: 'Actions and account digest', nav: 'Up Next', hint: 'Actions', render: pageNext, module: 'whats_next' },
 };
 const pageOn = p => !p.module || moduleOn(p.module);
 

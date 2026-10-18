@@ -179,7 +179,7 @@ def _money(amount: float, cur: str) -> str:
 
 
 def _actions(ds: Dataset, as_of: date, rng: random.Random) -> None:
-    """What's Next items. The first three are derived from the data, so their
+    """Up Next items. The first three are derived from the data, so their
     figures always match Receivables and Dunning; the rest are fictional context."""
     from ..aging import dunning, open_items
 

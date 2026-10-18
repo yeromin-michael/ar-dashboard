@@ -42,7 +42,7 @@ What the rebuild must do. It was taken from the structure of the previous dashbo
 - Filter: minimum days overdue (1+ / 30+ / 60+ / 90+).
 - "Send reminder" opens a pre-filled email draft (greeting with the contact's first name, an aligned table of invoice / due date / amount, a total, and a sign-off).
 
-### 7. What's Next (actions & digest)
+### 7. Up Next (actions & digest)
 - **Actions**: cards with customer, urgency (high/medium/low), title, body and tag (e.g. shipment, invoice to issue).
 - **Digest**: account news and context cards.
 - Sample actions are partly **derived from the data** (escalate the largest 60+ day exposure, apply unapplied cash before chasing, upcoming license renewals), so their figures always match Receivables and Dunning.
