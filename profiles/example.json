@@ -1,0 +1,22 @@
+{
+  "_comment": "Fictional example. A real company's profile is confidential: keep it in data/private/ and point config.json \"profile\" at it. Sections you leave out use the defaults in ar/profile.py.",
+  "profile_version": 1,
+  "company": { "name": "Northwind Telematics (fictional)", "reporting_currency": "USD", "fiscal_year_start_month": 1 },
+  "currencies": ["USD", "EUR", "ILS"],
+  "entities": [
+    { "code": "Inc", "name": "Northwind Telematics Inc.", "currency": "USD" },
+    { "code": "Ltd", "name": "Northwind Telematics Ltd.", "currency": "ILS" }
+  ],
+  "revenue_streams": [
+    { "key": "subscription", "label": "Platform subscription", "revenue_type": "over_time", "billing_model": "monthly" },
+    { "key": "data", "label": "Data license", "revenue_type": "over_time", "billing_model": "annual" },
+    { "key": "hardware", "label": "Devices", "revenue_type": "point_in_time", "billing_model": "one_off" },
+    { "key": "adjustment", "label": "Credits & adjustments", "revenue_type": "point_in_time", "billing_model": "one_off" }
+  ],
+  "payment_terms": { "default_days": 30, "basis": "net" },
+  "aging": { "bucket_boundaries": [30, 60, 90], "basis": "due_date", "grace_days": 0 },
+  "collections": { "reminder_thresholds_days": [1, 30, 60, 90], "escalate_after_days": 90, "sender_name": "Accounts Receivable" },
+  "modules": { "revenue_recognition": true, "dunning": true, "whats_next": true, "usage_billing": true, "serials": true },
+  "targets": { "dso_days": 45, "past_due_pct": 15 },
+  "data_source": { "system": "QuickBooks Online", "mapping": "mappings/example.json" }
+}
