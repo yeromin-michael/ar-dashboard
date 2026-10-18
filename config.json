@@ -1,0 +1,10 @@
+{
+  "connector": "sample",
+  "as_of": "today",
+  "fx_to_usd": { "EUR": 1.08, "ILS": 0.27 },
+  "options": {
+    "sample": { "seed": 7, "months": 10 },
+    "file": { "dir": "data/private", "mapping": "mappings/example.json" },
+    "stripe": { "api_key_env": "STRIPE_API_KEY" }
+  }
+}
