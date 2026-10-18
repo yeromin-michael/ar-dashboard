@@ -1,0 +1,5 @@
+# Core (ar/, build.py) is stdlib-only. These are optional:
+openpyxl>=3.1      # XLSX file connector
+fastapi>=0.110     # main.py server
+uvicorn>=0.29
+pytest>=8

@@ -1,0 +1,19 @@
+# Real data never enters git
+data/private/
+*.xlsx
+*.xls
+!tests/fixtures/*.xlsx
+
+# Build output
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
