@@ -52,6 +52,17 @@ Sign conventions: payments must be positive. If your export shows receipts as ne
 | `file` | CSV / XLSX + column mapping |
 | `stripe` | Stub: interface defined, not implemented |
 
+## Company profile
+
+A profile describes how the company's AR works: entities and currencies, revenue streams (with revenue type and billing model), default payment terms, aging buckets and basis, collections thresholds, modules and targets. It will be filled in by the onboarding form and reviewed before real data is loaded.
+
+- Start from `profiles/example.json` (fictional). Keep the real one in `data/private/`, because it is client-confidential.
+- Point `config.json` at it with `"profile": "data/private/profile.json"`, or pass `--profile`.
+- Sections you leave out use the defaults in `ar/profile.py`, which match the dashboard's built-in behavior. With no profile, nothing changes.
+- `build.py` checks the profile first and names each bad field, e.g. `aging.bucket_boundaries: 1-6 increasing day counts`.
+
+For now the profile is loaded and checked only. The dashboard starts following it in the next release.
+
 ## Data hygiene
 
 `scripts/check_denylist.py` blocks commits (pre-commit hook) and CI runs that contain denied terms. The term list lives outside the repo (`~/.config/ar-dashboard/denylist.txt` locally, the `AR_DENYLIST` secret in CI).

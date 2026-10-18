@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """connector -> validate -> compute -> dist/data.json (+ copy web/ into dist/).
 
-Usage: python3 build.py [--config config.json] [--as-of YYYY-MM-DD]
+Usage: python3 build.py [--config config.json] [--profile path.json] [--as-of YYYY-MM-DD]
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from ar import aging
+from ar import aging, profile
 from ar.connectors.base import get
 from ar.model import Dataset, to_jsonable
 
@@ -99,11 +99,20 @@ def compute(ds: Dataset, as_of: date, fx: dict[str, float]) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=str(ROOT / "config.json"))
+    ap.add_argument("--profile", help="company profile JSON (overrides config.json \"profile\")")
     ap.add_argument("--as-of")
     ap.add_argument("--out", default=str(ROOT / "dist"))
     args = ap.parse_args(argv)
 
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    prof_path = args.profile or cfg.get("profile")
+    if prof_path and not Path(prof_path).is_absolute():
+        prof_path = ROOT / prof_path
+    try:
+        prof = profile.load(prof_path)
+    except profile.ProfileError as e:
+        print(e, file=sys.stderr)
+        return 1
     as_of = resolve_as_of(args.as_of or cfg.get("as_of"))
     name = cfg.get("connector", "sample")
     ds = get(name)(cfg.get("options", {}).get(name, {}), as_of)
@@ -122,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     k = data["kpis"]
     print(f"built {out/'data.json'}: {len(data['customers'])} customers, "
           f"{len(data['invoices'])} invoices, {k['open_invoices']} open, "
-          f"{k['overdue_invoices']} overdue, DSO {k['dso_days']} (as of {as_of}, source: {ds.source})")
+          f"{k['overdue_invoices']} overdue, DSO {k['dso_days']} (as of {as_of}, source: {ds.source}, "
+          f"profile: {Path(prof_path).name if prof_path else 'defaults'})")
     return 0
 
 
