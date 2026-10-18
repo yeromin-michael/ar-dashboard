@@ -70,7 +70,7 @@ What the profile controls:
 | `payment_terms` | Due date when an export row has neither a due date nor terms (`eom` counts from the end of the invoice month) |
 | `currencies` | Currencies the data may use; each non-USD one needs a rate in `config.json` `fx_to_usd` |
 | `collections` | Dunning thresholds, the "escalate" flag and the reminder sign-off |
-| `modules` | Hide Revenue Rec, Dunning, What's Next, usage billing or serials |
+| `modules` | Hide Revenue Rec, Dunning, Up Next (`whats_next`), usage billing or serials |
 | `targets` | DSO and past-due targets on the overview, marked met or missed |
 | `company` | Name in the sidebar. Reporting currency must be USD for now |
 
