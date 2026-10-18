@@ -8,6 +8,11 @@ const BUCKET_LABEL = { 'current': 'Current', '1-30': '1–30', '31-60': '31–60
 const BUCKET_VAR = { 'current': '--b0', '1-30': '--b1', '31-60': '--b2', '61-90': '--b3', '90+': '--b4' };
 const CAT_ORDER = ['subscription', 'data', 'hardware', 'adjustment'];
 const CAT_VAR = { subscription: '--c1', data: '--c2', hardware: '--c3', adjustment: '--c4' };
+// Revenue type = recognition timing (ASC 606 / IFRS 15). Two series -> categorical slots 1 and 2.
+const TIMING_ORDER = ['over_time', 'point_in_time'];
+const TIMING_LABEL = { over_time: 'Over time', point_in_time: 'Point in time' };
+const TIMING_HINT = { over_time: 'ratably over the service period', point_in_time: 'on delivery' };
+const TIMING_VAR = { over_time: '--c1', point_in_time: '--c2' };
 const SYM = { USD: '$', EUR: '€', ILS: '₪' };
 
 /* ---------- DOM helpers ---------- */
@@ -134,6 +139,7 @@ const DRAW = [];
 function chartBox(draw) {
   const box = h('div', { class: 'chart' });
   DRAW.push(() => { box.replaceChildren(); draw(box, Math.max(280, box.clientWidth)); });
+  requestAnimationFrame(runDraws);   // charts built by a later repaint (filters) draw once attached
   return box;
 }
 function legend(items) {
@@ -495,9 +501,13 @@ function pageRevRec() {
   const months = uniq(D.revenue.map(r => r.month)).sort();
   const out = h('div');
   const paint = () => {
-    const rows = D.revenue.filter(r => (!F['rr-cat'] || r.category === F['rr-cat']) && matches(F['rr-q'], custName(r.customer_id)));
-    const cats = CAT_ORDER.filter(c => rows.some(r => r.category === c));
+    const rows = D.revenue.filter(r => (!F['rr-cat'] || r.category === F['rr-cat']) &&
+      (!F['rr-type'] || r.timing === F['rr-type']) && matches(F['rr-q'], custName(r.customer_id)));
     const shown = F['rr-month'] ? [F['rr-month']] : months;
+    const byType = F['rr-group'] === 'type';
+    const groups = byType
+      ? TIMING_ORDER.filter(t => rows.some(r => r.timing === t)).map(t => ({ key: t, label: TIMING_LABEL[t], color: cssVar(TIMING_VAR[t]), test: r => r.timing === t }))
+      : CAT_ORDER.filter(c => rows.some(r => r.category === c)).map(c => ({ key: c, label: cap(c), color: cssVar(CAT_VAR[c]), test: r => r.category === c }));
     const byCust = {};
     for (const r of rows) {
       const k = r.customer_id;
@@ -506,11 +516,23 @@ function pageRevRec() {
     const custRows = Object.values(byCust).map(c => ({ ...c, total: sum(shown, m => c.m[m] || 0) })).filter(c => c.total > 0)
       .sort((a, b) => usd(b.total, b.currency) - usd(a.total, a.currency));
     const usdFmt = (v, full) => full ? money(v, 'USD', 0) : compact(v);
-    put(out, 
-      chartCard('Recognized revenue by category', fxNote(),
-        (box, W) => columns(box, W, months.map(ymShort), cats.map(c => ({ label: cap(c), color: cssVar(CAT_VAR[c]),
-          values: months.map(m => sum(rows.filter(r => r.month === m && r.category === c), r => usd(r.amount, r.currency))) })), usdFmt),
-        () => table([{ label: 'Month', get: m => ymLabel(m) }, ...cats.map(c => ({ label: cap(c), num: true, get: m => money(sum(rows.filter(r => r.month === m && r.category === c), r => usd(r.amount, r.currency)), 'USD', 0) }))], months)),
+    const inShown = rows.filter(r => shown.includes(r.month));
+    const totalUsd = sum(inShown, r => usd(r.amount, r.currency));
+    const typeTile = t => {
+      const v = sum(inShown.filter(r => r.timing === t), r => usd(r.amount, r.currency));
+      return tile(TIMING_LABEL[t], compact(v), (totalUsd ? `${(v / totalUsd * 100).toFixed(0)}% of recognized` : '—') + ' · ' + TIMING_HINT[t]);
+    };
+    const period = F['rr-month'] ? ymLabel(F['rr-month']) : `${ymLabel(months[0])} – ${ymLabel(months[months.length - 1])}`;
+    put(out,
+      h('div', { class: 'tiles' },
+        tile('Recognized revenue', compact(totalUsd), period + ' · USD equivalent'),
+        TIMING_ORDER.map(typeTile)),
+      chartCard(byType ? 'Recognized revenue by revenue type' : 'Recognized revenue by category', fxNote(),
+        (box, W) => columns(box, W, months.map(ymShort), groups.map(g => ({ label: g.label, color: g.color,
+          values: months.map(m => sum(rows.filter(r => r.month === m && g.test(r)), r => usd(r.amount, r.currency))) })), usdFmt),
+        () => table([{ label: 'Month', get: m => ymLabel(m) }, ...groups.map(g => ({ label: g.label, num: true,
+          get: m => money(sum(rows.filter(r => r.month === m && g.test(r)), r => usd(r.amount, r.currency)), 'USD', 0) }))], months),
+        h('label', { class: 'note' }, 'Group by ', select('rr-group', [['', 'Category'], ['type', 'Revenue type']], paint, 'Group chart by'))),
       h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, 'By customer'), h('span', { class: 'note' }, 'Native currency')),
         table([
           { label: 'Customer', get: c => h('a', { href: '#/c/' + c.customer_id }, custName(c.customer_id)) },
@@ -522,8 +544,9 @@ function pageRevRec() {
   return [h('div', { class: 'filters' },
     select('rr-month', [['', 'All months'], ...months.map(m => [m, ymLabel(m)])], paint, 'Month'),
     select('rr-cat', [['', 'All categories'], ...CAT_ORDER.map(c => [c, cap(c)])], paint, 'Category'),
+    select('rr-type', [['', 'All revenue types'], ...TIMING_ORDER.map(t => [t, TIMING_LABEL[t]])], paint, 'Revenue type'),
     search('rr-q', 'Search customer…', paint),
-    h('button', { class: 'btn', onclick: () => { ['rr-month', 'rr-cat', 'rr-q'].forEach(k => delete F[k]); render(); } }, 'Clear')), out];
+    h('button', { class: 'btn', onclick: () => { ['rr-month', 'rr-cat', 'rr-type', 'rr-group', 'rr-q'].forEach(k => delete F[k]); render(); } }, 'Clear')), out];
 }
 
 function reminderText(g) {

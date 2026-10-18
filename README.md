@@ -42,6 +42,8 @@ Every release is a git tag, so any version can be restored with `git checkout vX
 3. In `config.json` set `"connector": "file"` and point `options.file.mapping` at your mapping.
 4. `python3 build.py` validates everything first. Errors name the file, row and field.
 
+Revenue type: a revenue file may include a `timing` column (`over time` / `point in time`; `ratably` and `PIT` are accepted too). Without it, the type is derived from the category.
+
 Sign conventions: payments must be positive. If your export shows receipts as negatives or in parentheses, add `"negate": true` to the payments mapping.
 
 | Connector | Status |

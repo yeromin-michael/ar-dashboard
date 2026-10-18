@@ -106,6 +106,18 @@ def slug(t: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", str(t).lower()).strip("-")
 
 
+def parse_timing(v) -> str:
+    """Map export wording to a revenue type; empty = derive from category."""
+    t = re.sub(r"[^a-z]", "", str(v or "").lower())
+    if not t:
+        return ""
+    if t in ("overtime", "ratably", "ratable", "ot"):
+        return "over_time"
+    if t in ("pointintime", "atapointintime", "pit", "pointin", "upondelivery"):
+        return "point_in_time"
+    raise ValueError(f"unknown revenue type {v!r} (use 'over time' or 'point in time')")
+
+
 def _list(v) -> list[str]:
     return [x.strip() for x in re.split(r"[;,]", str(v or "")) if x.strip()]
 
@@ -256,7 +268,8 @@ def load_mapping(spec: dict, base: Path, source: str = "file") -> Dataset:
             cur = parse_currency(m.raw(r, "currency"), "USD")
             ds.revenue.append(RevenueLine(customer_ref(m, r, cur, "Inc"), month,
                                           m.text(r, "category", default="subscription").lower(),
-                                          m.amount(r, "amount", True), cur, m.text(r, "invoice_id") or None))
+                                          m.amount(r, "amount", True), cur, m.text(r, "invoice_id") or None,
+                                          parse_timing(m.text(r, "timing"))))
         except (ValueError, MappingError) as e:
             raise err("revenue", i, e)
 

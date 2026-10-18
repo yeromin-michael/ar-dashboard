@@ -34,6 +34,7 @@ What the rebuild must do. It was taken from the structure of the previous dashbo
 
 ### 5. Revenue Recognition (by customer)
 - Filters: month, category (Subscription types, Data, Hardware, Adjustments), search.
+- Revenue type (ASC 606 / IFRS 15 timing): **Over time** vs **Point in time**. Filter, chart grouping (Category ⇄ Revenue type), and summary tiles with each type's share. Defaults from category (subscription and data over time; hardware and adjustments point in time), and can be overridden per revenue line.
 - Recognized vs. invoiced, per customer per month.
 
 ### 6. Dunning (send reminders)

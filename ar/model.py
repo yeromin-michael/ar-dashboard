@@ -9,6 +9,15 @@ CURRENCIES = ("USD", "EUR", "ILS")
 PAYMENT_KINDS = ("payment", "credit", "adjustment")
 INVOICE_KINDS = ("new", "deferred")
 URGENCIES = ("high", "medium", "low")
+# Revenue type = ASC 606 / IFRS 15 recognition timing. Default per category;
+# a connector may set timing explicitly per line to override it.
+REVENUE_TIMINGS = ("over_time", "point_in_time")
+TIMING_BY_CATEGORY = {
+    "subscription": "over_time",
+    "data": "over_time",
+    "hardware": "point_in_time",
+    "adjustment": "point_in_time",
+}
 
 
 @dataclass
@@ -66,6 +75,11 @@ class RevenueLine:
     amount: float
     currency: str
     invoice_id: Optional[str] = None
+    timing: str = ""                 # over_time | point_in_time; empty = derive from category
+
+    def __post_init__(self):
+        if not self.timing:
+            self.timing = TIMING_BY_CATEGORY.get(self.category, "point_in_time")
 
 
 @dataclass
@@ -160,6 +174,9 @@ class Dataset:
                     errs.append(f"payment {p.id}: currency differs from invoice {inv.id}")
                 elif inv.customer_id != p.customer_id:
                     errs.append(f"payment {p.id}: customer differs from invoice {inv.id}")
+        for r in self.revenue:
+            if r.timing not in REVENUE_TIMINGS:
+                errs.append(f"revenue {r.customer_id}/{r.month}: unknown revenue type {r.timing}")
         for a in self.actions:
             if a.urgency not in URGENCIES:
                 errs.append(f"action {a.id}: unknown urgency {a.urgency}")

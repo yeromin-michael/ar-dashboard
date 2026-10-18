@@ -86,6 +86,7 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .card .desc { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
 .card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .card-head .btn, .card-head .link-btn { margin-left: auto; }
+.card-head select { padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font-size: 12px; margin-left: 4px; }
 .link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; }
 
 .table-wrap { overflow-x: auto; }
