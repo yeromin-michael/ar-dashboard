@@ -78,8 +78,15 @@ class RevenueLine:
     timing: str = ""                 # over_time | point_in_time; empty = derive from category
 
     def __post_init__(self):
+        # Plain attribute, not a field: kept out of asdict()/data.json.
+        self.timing_derived = not self.timing
         if not self.timing:
             self.timing = TIMING_BY_CATEGORY.get(self.category, "point_in_time")
+
+    def apply_timing_defaults(self, by_category: dict[str, str]) -> None:
+        """Re-derive a defaulted revenue type from the company's own category rules."""
+        if self.timing_derived:
+            self.timing = by_category.get(self.category, "point_in_time")
 
 
 @dataclass
@@ -137,7 +144,7 @@ class Dataset:
     actions: list[ActionItem] = field(default_factory=list)
     source: str = ""
 
-    def validate(self) -> list[str]:
+    def validate(self, currencies=CURRENCIES) -> list[str]:
         """Return a list of integrity problems (empty = valid)."""
         errs: list[str] = []
         cust = {c.id: c for c in self.customers}
@@ -148,12 +155,12 @@ class Dataset:
             errs.append("duplicate invoice ids")
         invs = {i.id: i for i in self.invoices}
         for c in self.customers:
-            if c.currency not in CURRENCIES:
+            if c.currency not in currencies:
                 errs.append(f"customer {c.id}: unknown currency {c.currency}")
         for i in self.invoices:
             if i.customer_id not in cust:
                 errs.append(f"invoice {i.id}: unknown customer {i.customer_id}")
-            if i.currency not in CURRENCIES:
+            if i.currency not in currencies:
                 errs.append(f"invoice {i.id}: unknown currency {i.currency}")
             if i.due_date < i.issue_date:
                 errs.append(f"invoice {i.id}: due before issue")

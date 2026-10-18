@@ -59,9 +59,22 @@ A profile describes how the company's AR works: entities and currencies, revenue
 - Start from `profiles/example.json` (fictional). Keep the real one in `data/private/`, because it is client-confidential.
 - Point `config.json` at it with `"profile": "data/private/profile.json"`, or pass `--profile`.
 - Sections you leave out use the defaults in `ar/profile.py`, which match the dashboard's built-in behavior. With no profile, nothing changes.
-- `build.py` checks the profile first and names each bad field, e.g. `aging.bucket_boundaries: 1-6 increasing day counts`.
+- `build.py` checks the profile first and names each bad field, e.g. `aging.bucket_boundaries: 1-5 increasing day counts`.
 
-For now the profile is loaded and checked only. The dashboard starts following it in the next release.
+What the profile controls:
+
+| Section | Effect |
+|---|---|
+| `aging` | Bucket boundaries (up to 5, e.g. `[15, 45, 90]` gives Current, 1–15, 16–45, 46–90, 90+), basis (`due_date`, or `invoice_date` to age from issue) and grace days before an invoice counts as overdue |
+| `revenue_streams` | Category labels and order, and the revenue type for lines whose export doesn't state one |
+| `payment_terms` | Due date when an export row has neither a due date nor terms (`eom` counts from the end of the invoice month) |
+| `currencies` | Currencies the data may use; each non-USD one needs a rate in `config.json` `fx_to_usd` |
+| `collections` | Dunning thresholds, the "escalate" flag and the reminder sign-off |
+| `modules` | Hide Revenue Rec, Dunning, What's Next, usage billing or serials |
+| `targets` | DSO and past-due targets on the overview, marked met or missed |
+| `company` | Name in the sidebar. Reporting currency must be USD for now |
+
+`entities`, `fiscal_year_start_month`, `billing_model` and `data_source` are recorded but not used yet; the onboarding check will compare them with the export.
 
 ## Data hygiene
 

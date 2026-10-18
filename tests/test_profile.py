@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -86,7 +87,7 @@ def test_load_does_not_mutate_defaults(tmp_path):
     ({"payment_terms": {"basis": "net30"}}, "payment_terms.basis"),
     ({"aging": {"bucket_boundaries": [60, 30]}}, "aging.bucket_boundaries"),
     ({"aging": {"bucket_boundaries": []}}, "aging.bucket_boundaries"),
-    ({"aging": {"bucket_boundaries": [1, 2, 3, 4, 5, 6, 7]}}, "aging.bucket_boundaries"),
+    ({"aging": {"bucket_boundaries": [1, 2, 3, 4, 5, 6]}}, "aging.bucket_boundaries"),
     ({"aging": {"basis": "posting_date"}}, "aging.basis"),
     ({"aging": {"grace_days": True}}, "aging.grace_days"),
     ({"collections": {"reminder_thresholds_days": [30, 30]}}, "collections.reminder_thresholds_days"),
@@ -117,12 +118,92 @@ def test_build_rejects_invalid_profile(tmp_path, capsys):
     assert "aging.basis" in capsys.readouterr().err
 
 
-def test_profile_does_not_change_output_yet(tmp_path):
-    """Task 1 only loads and checks the profile; the dashboard still uses its built-in rules."""
-    def built(*extra):
-        out = tmp_path / ("dist" + str(len(extra)))
-        assert build.main(["--out", str(out), "--as-of", "2026-06-30", *extra]) == 0
-        data = json.loads((out / "data.json").read_text())
-        data["meta"].pop("generated_at")
-        return data
-    assert built() == built("--profile", str(EXAMPLE))
+def built(tmp_path, *extra, as_of="2026-06-30"):
+    out = tmp_path / f"dist{len(list(tmp_path.iterdir()))}"
+    assert build.main(["--out", str(out), "--as-of", as_of, *extra]) == 0
+    data = json.loads((out / "data.json").read_text())
+    data["meta"].pop("generated_at")
+    return data
+
+
+def test_default_profile_file_matches_no_profile(tmp_path):
+    explicit = write(tmp_path, profile.DEFAULTS)
+    assert built(tmp_path) == built(tmp_path, "--profile", str(explicit))
+
+
+def test_meta_carries_ui_profile_without_data_source(tmp_path):
+    meta = built(tmp_path, "--profile", str(EXAMPLE))["meta"]
+    assert meta["profile"]["company"]["name"].endswith("(fictional)")
+    assert meta["profile"]["targets"] == {"dso_days": 45, "past_due_pct": 15}
+    assert "data_source" not in meta["profile"]
+
+
+def test_custom_buckets_flow_through_build(tmp_path):
+    prof = write(tmp_path, {"aging": {"bucket_boundaries": [15, 45, 120]}})
+    data = built(tmp_path, "--profile", str(prof))
+    keys = ["current", "1-15", "16-45", "46-120", "120+"]
+    assert data["meta"]["buckets"] == keys
+    for g in data["aging"]:
+        assert round(sum(g[k] for k in keys), 2) == g["gross"]
+    for t in data["kpis"]["totals_by_currency"].values():
+        assert set(keys) <= set(t)
+    assert {i["bucket"] for i in data["invoices"] if i["bucket"]} <= set(keys)
+
+
+def test_profile_revenue_types_override_derived_defaults(tmp_path):
+    prof = write(tmp_path, {"revenue_streams": [
+        {"key": "subscription", "label": "SaaS", "revenue_type": "over_time", "billing_model": "monthly"},
+        {"key": "data", "label": "Data", "revenue_type": "point_in_time", "billing_model": "usage"},
+        {"key": "hardware", "label": "Devices", "revenue_type": "over_time", "billing_model": "one_off"}]})
+    rev = built(tmp_path, "--profile", str(prof))["revenue"]
+    by_cat = {}
+    for r in rev:
+        by_cat.setdefault(r["category"], set()).add(r["timing"])
+    assert by_cat["data"] == {"point_in_time"} and by_cat["hardware"] == {"over_time"}
+
+
+def test_explicit_revenue_type_beats_profile():
+    r = model.RevenueLine("c", "2026-01", "hardware", 1.0, "USD", timing="point_in_time")
+    r.apply_timing_defaults({"hardware": "over_time"})
+    assert r.timing == "point_in_time"
+    d = model.RevenueLine("c", "2026-01", "hardware", 1.0, "USD")
+    d.apply_timing_defaults({"hardware": "over_time"})
+    assert d.timing == "over_time"
+    assert "timing_derived" not in model.to_jsonable(d)
+
+
+def test_currency_not_in_profile_fails_validation(tmp_path, capsys):
+    prof = write(tmp_path, {"currencies": ["USD", "EUR"]})
+    assert build.main(["--profile", str(prof), "--out", str(tmp_path / "d"), "--as-of", "2026-06-30"]) == 1
+    assert "unknown currency ILS" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("partial,fragment", [
+    ({"currencies": ["USD", "EUR", "ILS", "GBP"]}, "no rate for GBP"),
+    ({"currencies": ["USD", "EUR"], "company": {"reporting_currency": "EUR"}}, "only USD is supported"),
+])
+def test_fx_and_reporting_currency_checked(tmp_path, capsys, partial, fragment):
+    prof = write(tmp_path, partial)
+    assert build.main(["--profile", str(prof), "--out", str(tmp_path / "d"), "--as-of", "2026-06-30"]) == 1
+    assert fragment in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("issue,days,basis,expected", [
+    (date(2026, 1, 15), 30, "net", date(2026, 2, 14)),
+    (date(2026, 1, 15), 30, "eom", date(2026, 3, 2)),
+    (date(2026, 2, 3), 0, "eom", date(2026, 2, 28)),
+    (date(2028, 2, 3), 15, "eom", date(2028, 3, 15)),   # leap year: Feb 29 + 15
+])
+def test_due_date_from_terms(issue, days, basis, expected):
+    assert profile.due_date(issue, days, basis) == expected
+
+
+def test_file_connector_uses_profile_terms(tmp_path):
+    from ar.connectors.file import load_mapping
+    (tmp_path / "inv.csv").write_text("Doc,Client,Date,Total,Terms\nA-1,X,2026-01-15,100,\nA-2,X,2026-01-15,100,10\n")
+    ds = load_mapping({"files": {"invoices": {"path": "inv.csv", "columns": {
+        "id": "Doc", "customer_name": "Client", "issue_date": "Date", "total": "Total", "terms_days": "Terms"}}}},
+        tmp_path, terms={"default_days": 45, "basis": "eom"})
+    due = {i.id: i.due_date for i in ds.invoices}
+    assert due == {"A-1": date(2026, 3, 17), "A-2": date(2026, 2, 10)}   # row terms win, still end-of-month
+    assert ds.customers[0].terms_days == 45

@@ -26,6 +26,7 @@ from pathlib import Path
 
 from ..model import (ActionItem, ContractTerm, Customer, Dataset, Invoice,
                      Payment, RevenueLine, UsageBatch)
+from ..profile import due_date
 
 DEFAULT_DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%m/%d/%Y", "%d.%m.%Y", "%d %b %y", "%d %b %Y"]
 CURRENCY_SIGNS = {"$": "USD", "€": "EUR", "₪": "ILS"}
@@ -156,10 +157,13 @@ def load(options: dict, as_of: date) -> Dataset:
     base = Path(options.get("dir", "data/private"))
     mapping_path = Path(options.get("mapping", "mappings/example.json"))
     spec = json.loads(mapping_path.read_text(encoding="utf-8"))
-    return load_mapping(spec, base, source=f"file ({base.name})")
+    return load_mapping(spec, base, source=f"file ({base.name})", terms=options.get("terms"))
 
 
-def load_mapping(spec: dict, base: Path, source: str = "file") -> Dataset:
+def load_mapping(spec: dict, base: Path, source: str = "file", terms: dict | None = None) -> Dataset:
+    """terms = the profile's payment_terms; used when a row has no due date or terms."""
+    default_days = int((terms or {}).get("default_days", 30))
+    terms_basis = (terms or {}).get("basis", "net")
     formats = spec.get("date_formats") or DEFAULT_DATE_FORMATS
     files = spec.get("files", {})
     if "invoices" not in files:
@@ -190,7 +194,7 @@ def load_mapping(spec: dict, base: Path, source: str = "file") -> Dataset:
                 product=m.text(r, "product"), contact_name=m.text(r, "contact_name"),
                 contact_emails=_list(m.raw(r, "contact_emails")),
                 budget_code=m.text(r, "budget_code"),
-                terms_days=int(m.amount(r, "terms_days") or 30),
+                terms_days=int(m.amount(r, "terms_days") or default_days),
                 modules=_list(m.raw(r, "modules")),
             ))
         except (ValueError, MappingError) as e:
@@ -208,7 +212,8 @@ def load_mapping(spec: dict, base: Path, source: str = "file") -> Dataset:
         if cid not in known:
             if files.get("customers"):
                 raise MappingError(f"unknown customer '{cid}'")
-            ds.customers.append(Customer(id=cid, name=name or cid, entity=entity, currency=currency))
+            ds.customers.append(Customer(id=cid, name=name or cid, entity=entity, currency=currency,
+                                         terms_days=default_days))
             known.add(cid)
             by_name[(name or cid).lower()] = cid
         return cid
@@ -220,7 +225,7 @@ def load_mapping(spec: dict, base: Path, source: str = "file") -> Dataset:
             cur = parse_currency(m.raw(r, "currency"), "USD")
             entity = m.text(r, "entity", default="Inc")
             issue = m.date(r, "issue_date", required=True)
-            due = m.date(r, "due_date") or issue + timedelta(days=int(m.amount(r, "terms_days") or 30))
+            due = m.date(r, "due_date") or due_date(issue, int(m.amount(r, "terms_days") or default_days), terms_basis)
             if m.columns.get("net") or "net" in m.defaults:
                 net, tax = m.amount(r, "net", True), m.amount(r, "tax")
             else:   # only a gross total available
