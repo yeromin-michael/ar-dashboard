@@ -17,9 +17,23 @@ connector (sample | file | api)  ->  ar/ (model + aging)  ->  dist/data.json  ->
 ## Quick start
 
 ```sh
-python3 build.py            # sample data -> dist/data.json
-python3 -m http.server -d dist 8000
+python3 build.py                         # sample data -> dist/data.json (stdlib only)
+python3 -m http.server -d dist 8000      # static preview
+
+# or the server (security headers, /api/ar, /health):
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/uvicorn main:app --port 8080
 ```
+
+Build for a fixed date: `python3 build.py --as-of 2026-06-30`. Run tests with `pytest -q`.
+
+## Releasing
+
+```sh
+./release.sh minor "what changed"    # runs deny-list + tests + build, bumps VERSION, tags vX.Y.Z, pushes
+```
+
+Every release is a git tag, so any version can be restored with `git checkout vX.Y.Z`. The version shows in the sidebar badge.
 
 ## Using real data
 
