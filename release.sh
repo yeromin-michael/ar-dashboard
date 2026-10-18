@@ -16,12 +16,11 @@ case "$part" in major|minor|patch) ;; *) echo "usage: $0 [major|minor|patch] \"n
 PY="${PYTHON:-$( [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3 )}"
 "$PY" scripts/check_denylist.py
 "$PY" -m pytest -q
-"$PY" build.py >/dev/null
-
 old="$(cat VERSION)"
 new="$(echo "$old" | awk -F. -v p="$part" '{
   if (p=="major") print $1+1".0.0"; else if (p=="minor") print $1"."$2+1".0"; else print $1"."$2"."$3+1 }')"
 echo "$new" > VERSION
+"$PY" build.py >/dev/null   # after the bump, so the badge shows the new version
 
 git add VERSION
 git commit -q -m "Release v$new: $note"
