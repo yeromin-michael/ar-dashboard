@@ -88,6 +88,7 @@ def compute(ds: Dataset, as_of: date, fx: dict[str, float]) -> dict:
         "aging": pivot,
         "dunning": aging.dunning(ds, items, min_days=1),
         "collections": sorted(collections, key=lambda c: c["date"], reverse=True),
+        "payments": [to_jsonable(p) for p in ds.payments if p.date <= as_of],
         "revenue": [r for r in to_jsonable(ds.revenue) if r["month"] <= as_of.strftime("%Y-%m")],
         "contracts": to_jsonable(ds.contracts),
         "usage": usage,

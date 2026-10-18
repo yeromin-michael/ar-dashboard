@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AR Dashboard</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar" aria-label="Main">
+    <div class="brand"><b>AR Dashboard</b><span id="source-label">Loading…</span></div>
+    <div class="nav" id="nav"></div>
+    <div class="side-label">Customers</div>
+    <input class="cust-search" id="cust-search" type="search" placeholder="Find customer…" aria-label="Find customer">
+    <div class="cust-list" id="cust-list"></div>
+    <div class="version" id="version"></div>
+  </nav>
+  <div class="main">
+    <header class="topbar">
+      <div><h1 id="page-title">AR Dashboard</h1><div class="sub" id="page-sub"></div></div>
+      <div class="gap"></div>
+      <span class="pill" id="asof-pill"></span>
+      <button class="icon-btn" id="theme-btn" title="Toggle light/dark">◐ Theme</button>
+    </header>
+    <main class="content" id="content"><div class="empty">Loading data…</div></main>
+  </div>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>
+<script src="app.js"></script>
+</body>
+</html>

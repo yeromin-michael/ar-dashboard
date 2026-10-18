@@ -31,3 +31,11 @@ def test_nothing_after_as_of():
     ds = load({"seed": 7}, AS_OF)
     assert all(i.issue_date <= AS_OF for i in ds.invoices)
     assert all(p.date <= AS_OF for p in ds.payments)
+
+
+def test_usage_batches_match_invoices():
+    ds = load({"seed": 7}, AS_OF)
+    for b in ds.usage:
+        billed = [i for i in ds.invoices if i.customer_id == b.customer_id and i.category == "subscription"
+                  and i.issue_date.strftime("%Y-%m") == b.month]
+        assert len(billed) == 1 and billed[0].net == b.subtotal

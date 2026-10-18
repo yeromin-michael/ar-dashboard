@@ -75,7 +75,7 @@ def load(options: dict, as_of: date) -> Dataset:
     for idx, (name, entity, cur, product, profile, terms, modules) in enumerate(CUSTOMERS):
         cid = _slug(name)
         contact = f"{FIRST[idx]} {LAST[idx]}"
-        domain = _slug(name) + ".example"
+        domain = "".join(ch for ch in name.lower() if ch.isalnum()) + ".example"
         ds.customers.append(Customer(
             id=cid, name=name, entity=entity, currency=cur, product=product,
             contact_name=contact,
@@ -106,7 +106,14 @@ def load(options: dict, as_of: date) -> Dataset:
             if issue > as_of:
                 continue
             lines = []
-            if "Subscription" in product:
+            if "usage_billing" in modules:
+                # invoice is derived from the usage batch, so calculator and billing agree
+                batch = UsageBatch(cid, m.strftime("%Y-%m"), units=150 + k * rng.randint(8, 25),
+                                   rate_per_unit=24.0, base_fee=1500.0, tax_rate=0.0, hw_share=0.25)
+                ds.usage.append(batch)
+                lines.append(("subscription", batch.subtotal,
+                              f"Usage billing - {batch.units} units - {m:%b %Y}"))
+            elif "Subscription" in product:
                 units = int(40 * scale + k * rng.randint(0, 6))
                 lines.append(("subscription", round(units * rng.choice([18, 22, 25]), 2),
                               f"Platform subscription - {units} units - {m:%b %Y}"))
@@ -159,12 +166,6 @@ def load(options: dict, as_of: date) -> Dataset:
             ds.contracts.append(ContractTerm(cid, "Amendment", "SLA credit clause",
                                              "Service credits up to 10% of monthly fee"))
 
-        if "usage_billing" in modules:
-            for k in range(months):
-                m = _month_start(start, k)
-                if _month_end(m) <= as_of:
-                    ds.usage.append(UsageBatch(cid, m.strftime("%Y-%m"), units=150 + k * rng.randint(8, 25),
-                                               rate_per_unit=24.0, base_fee=1500.0, tax_rate=0.0, hw_share=0.25))
 
     _actions(ds, as_of, rng)
     return ds
