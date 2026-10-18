@@ -171,26 +171,89 @@ def load(options: dict, as_of: date) -> Dataset:
     return ds
 
 
+SYMBOL = {"USD": "$", "EUR": "€", "ILS": "₪"}
+
+
+def _money(amount: float, cur: str) -> str:
+    return f"{SYMBOL.get(cur, cur + ' ')}{amount:,.0f}"
+
+
 def _actions(ds: Dataset, as_of: date, rng: random.Random) -> None:
-    by_name = {c.name.split()[0]: c.id for c in ds.customers}
-    items = [
-        ("action", "Acme", "high", "Issue balance invoice on shipment",
-         "Hardware batch ships this month. Invoice the remaining balance on the ship date.", "Shipment + invoice"),
-        ("action", "Driftwood", "high", "Escalate 90+ day balance",
-         "Three invoices are past 90 days. Send a final notice and loop in the account owner.", "Collections"),
-        ("action", "Juniper", "medium", "Resolve disputed SLA credit",
-         "Customer is short-paying against the SLA clause. Agree the credit amount and issue a credit note.", "Dispute"),
-        ("action", "Meridian", "medium", "Renew PO before next invoice",
-         "Public-sector PO expires at month end. Invoices without a valid PO will be rejected.", "PO"),
-        ("action", "Pinecrest", "low", "Apply unapplied payment",
-         "A payment on account is unapplied. Ask for remittance advice to match it to invoices.", "Cash application"),
-        ("digest", "Kestrel", "medium", "Expansion pilot under discussion",
-         "Evaluating a second region. Volume could double if the pilot converts.", ""),
-        ("digest", "Borealis", "low", "Moved to annual billing next cycle",
-         "Customer asked to switch from monthly to annual upfront billing at renewal.", ""),
-        ("digest", "Harbor", "medium", "New AP contact",
-         "Accounts payable moved to a shared mailbox. Update dunning recipients.", ""),
+    """What's Next items. The first three are derived from the data, so their
+    figures always match Receivables and Dunning; the rest are fictional context."""
+    from ..aging import dunning, open_items
+
+    cid = {c.name.split()[0]: c.id for c in ds.customers}
+    items = open_items(ds, as_of)
+    overdue = {(g["customer_id"], g["currency"]): g for g in dunning(ds, items)}
+    disputed = {cid["Juniper"]}
+    out: list[tuple] = []   # (kind, customer_id, urgency, title, body, tag)
+
+    # 1. Escalate the largest overdue exposure that is 60+ days late (disputes are handled separately).
+    worst = max((g for g in overdue.values() if g["max_days"] >= 60 and g["customer_id"] not in disputed),
+                key=lambda g: g["total"], default=None)
+    if worst:
+        n = len(worst["invoices"])
+        out.append(("action", worst["customer_id"], "high",
+                    f"Escalate {_money(worst['total'], worst['currency'])} overdue",
+                    f"{n} invoice{'s' if n > 1 else ''}, oldest {worst['max_days']} days late. Send a final notice, "
+                    "copy the account owner, and put new orders on credit hold until a payment date is agreed.",
+                    "Escalation"))
+
+    # 2. Unapplied cash on an account that also has overdue invoices: match before chasing.
+    cash = [p for p in ds.payments if p.invoice_id is None and p.kind == "payment" and p.date <= as_of
+            and (p.customer_id, p.currency) in overdue]
+    if cash:
+        p = max(cash, key=lambda x: x.amount)
+        g = overdue[(p.customer_id, p.currency)]
+        rest = max(g["total"] - p.amount, 0)
+        out.append(("action", p.customer_id, "high",
+                    f"Apply {_money(p.amount, p.currency)} unapplied payment",
+                    f"Received {p.date.day} {p.date:%b} with no remittance advice while {_money(g['total'], p.currency)} is overdue. "
+                    f"Ask AP which invoices it covers; applying it cuts past due to {_money(rest, p.currency)} "
+                    "before anyone sends a reminder.",
+                    "Cash application"))
+
+    # 3. Annual license renewing within ~5 months: quote and invoice ahead of the new term.
+    renewals = []
+    for inv in ds.invoices:
+        if inv.kind == "deferred":
+            end = date(inv.issue_date.year + 1, inv.issue_date.month, min(inv.issue_date.day, 28))
+            if 0 <= (end - as_of).days <= 150:
+                renewals.append((end, inv))
+    if renewals:
+        end, inv = min(renewals, key=lambda x: x[0])
+        out.append(("action", inv.customer_id, "medium",
+                    f"Renewal due {end.day} {end:%b %Y}: {_money(inv.total, inv.currency)} license",
+                    f"Annual data license ends in {(end - as_of).days} days. Send the renewal quote now and issue the "
+                    "invoice 30 days before the new term, so payment falls due as the new term starts.",
+                    "Renewal"))
+
+    # Fictional context: actions without figures, then digest.
+    pay_run = as_of + timedelta(days=3)
+    out += [
+        ("action", cid["Juniper"], "medium", "Close the SLA credit dispute",
+         "Customer is short-paying invoices against the SLA clause. Agree the credit amount with the account owner, "
+         "issue one credit note, and ask for the remaining balance in the same email.", "Dispute"),
+        ("action", cid["Harbor"], "medium", f"Confirm promised payment on {pay_run.day} {pay_run:%b}",
+         "AP promised to include the oldest invoices in their next payment run. Check receipts that day; "
+         "if nothing arrives, call rather than email.", "Promise to pay"),
+        ("action", cid["Meridian"], "low", "Resubmit invoice through the supplier portal",
+         "The city's portal rejected the latest invoice for a missing PO number. Resubmit with the PO; "
+         "their 60-day payment clock only starts on acceptance.", "Portal rejection"),
+        ("digest", cid["Cobalt"], "low", "Switched to ACH auto-debit",
+         "Payments now settle on the due date automatically. Expect this account to drop out of dunning.", "Payment method"),
+        ("digest", cid["Ember"], "medium", "Fleet expansion next quarter",
+         "Adding roughly 40% more units. Usage invoices will grow; check the credit limit before the first larger invoice.",
+         "Growth"),
+        ("digest", cid["Quillstone"], "low", "Year-end AP freeze from 15 Dec",
+         "Their fiscal year closes 31 Dec and AP stops paying mid-December. Issue December invoices early.", "Year-end"),
+        ("digest", cid["Kestrel"], "low", "New controller, new approval workflow",
+         "Invoice approvals move to a new AP system next month. Confirm the new billing contact before the next reminder.",
+         "Contact change"),
     ]
-    for n, (kind, short, urg, title, body, tag) in enumerate(items, 1):
-        ds.actions.append(ActionItem(f"wn-{n}", by_name[short], kind, title, body, urg, tag,
-                                     as_of - timedelta(days=rng.randint(0, 14))))
+    for kind, customer, urg, title, body, tag in out:
+        # stable id per customer + topic, so saved/dismissed state in the browser follows the item
+        item_id = "wn-" + customer + "-" + "".join(ch for ch in tag.lower() if ch.isalnum())
+        ds.actions.append(ActionItem(item_id, customer, kind, title, body, urg, tag,
+                                     as_of - timedelta(days=rng.randint(0, 10))))

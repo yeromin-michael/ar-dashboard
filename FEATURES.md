@@ -45,6 +45,7 @@ What the rebuild must do. It was taken from the structure of the previous dashbo
 ### 7. What's Next (actions & digest)
 - **Actions**: cards with customer, urgency (high/medium/low), title, body and tag (e.g. shipment, invoice to issue).
 - **Digest**: account news and context cards.
+- Sample actions are partly **derived from the data** (escalate the largest 60+ day exposure, apply unapplied cash before chasing, upcoming license renewals), so their figures always match Receivables and Dunning.
 - Per card: Save / Unsave / Dismiss (kept in browser storage in the old build).
 
 ### 8. Customer page (one per customer)
