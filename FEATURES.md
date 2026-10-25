@@ -1,6 +1,6 @@
 # AR Dashboard — Feature Inventory
 
-What the rebuild must do. It was taken from the structure of the previous dashboard and contains no data, names or branding from it.
+What the dashboard does, page by page.
 
 ## Global
 - Sidebar navigation: overview pages, then a list of customers (each customer has its own page).
@@ -46,7 +46,7 @@ What the rebuild must do. It was taken from the structure of the previous dashbo
 - **Actions**: cards with customer, urgency (high/medium/low), title, body and tag (e.g. shipment, invoice to issue).
 - **Digest**: account news and context cards.
 - Sample actions are partly **derived from the data** (escalate the largest 60+ day exposure, apply unapplied cash before chasing, upcoming license renewals), so their figures always match Receivables and Dunning.
-- Per card: Save / Unsave / Dismiss (kept in browser storage in the old build).
+- Per card: Save / Unsave / Dismiss (kept in browser storage).
 
 ### 8. Customer page (one per customer)
 - Contract summary table: Record Type, Description, Key Fields.
@@ -56,13 +56,13 @@ What the rebuild must do. It was taken from the structure of the previous dashbo
 - **Usage-based billing calculator** (one customer type): for each monthly batch, units × rate per unit + kit/base fee + sales tax = total invoice, with recognized revenue split HW/SW. Month selector.
 - **Device/serial list import** (one customer type): paste or import serials, kept per customer, with a clear button.
 
-## Problems in the old build that the rebuild fixes
-| Old behavior | Effect | Rebuild |
-|---|---|---|
-| Overdue `days` hard-coded on each row, `TODAY` a constant | Aging goes stale unless edited by hand | Days are computed from the due date and the as-of date at build time |
-| All data embedded in a 250KB HTML file | Every data update means editing code, which risks leaking data | Data comes from a connector and is written to `data.json`; the UI is code only |
-| ~17 hand-written customer pages | Pages drift apart; each new customer means copying HTML | One customer-page template, with optional modules switched on per customer |
-| Reminder email finds the contact by matching the first word of the customer name | The wrong customer's contact can be picked up | Contacts are linked by customer ID |
-| Dates stored as `dd/mm/yy` strings | Fragile to parse and sort | ISO dates throughout |
-| Card state and serials kept only in browser storage | Lost on another device; can't be shared | Same for now in the portfolio build; noted as a later backend job |
-| No FX handling | No single total across currencies | Totals per currency plus an optional USD view using an FX table in config |
+## Design choices
+| Choice | Why |
+|---|---|
+| Aging days are computed from the due date and the as-of date at build time, never stored | Aging stays current without manual edits |
+| Data comes from a connector and is written to `data.json`; the UI is code only | Updating data never means editing code, so data can't leak into the repo |
+| One customer-page template, with optional modules switched on per customer | Pages stay consistent, and a new customer needs no new HTML |
+| Reminder contacts are linked by customer ID | The right contact is always used, even when customer names are similar |
+| ISO dates throughout | Reliable parsing and sorting |
+| Totals per currency, plus an optional USD view using an FX table in config | Currencies are never mixed silently, and a single total is still available |
+| Card state and serials are kept in browser storage for now | Simple for the portfolio build; moving them to a backend so they sync across devices is a later job |
